@@ -4,71 +4,61 @@ import joblib
 import requests
 import math
 
-app = Flask(__name__)  # creates Flask application instance
-CORS(app)
+# FLASK APPLICATION INITIALISATION
+app = Flask(__name__)  # CREATE FLASK APP INSTANCE
+CORS(app)              # ALLOWS FRONTEND TO CALL API WITHOUT BROWSER BLOCKING
 
-# Load the trained model and TF-IDF vectorizer
+# LOAD TRAINED MODEL + VECTORISER
 model = joblib.load("logistic_regression_model.pkl")
 tfidf = joblib.load("tfidf_vectorizer.pkl")
 
-HIBP_URL = "https://api.pwnedpasswords.com/range/"
+HIBP_URL = "https://api.pwnedpasswords.com/range/"      # HIBP API ENDPOINT
+
+# TEST ROUTE
+# @app.route("/", methods=["GET"])
+# def home():
+#     return jsonify({"message": "Password strength API is running"}), 200
 
 
-@app.route("/", methods=["GET"])
-def home():
-    return jsonify({"message": "Password strength API is running"}), 200
-
-
-@app.route("/predict", methods=["POST"])  # main API
+@app.route("/predict", methods=["POST"])
 def predict():
-    # """
-    # Expects JSON: {
-    #  "prefix": "21BD1",
-    #  "suffix": "0018A45C4D1DEF81644B54AB7F969B88D65"
 
-    #    }
-    # Returns: strength class + probabilities (and later leak info)
-    # """
+    # GET PASSWORD FROM INCOMING JSON
     data = request.get_json()
-
-    # Get the password from the incoming JSON
     password = data.get("password") if data else None
     prefix = data.get("prefix")
     suffix = data.get("suffix")
 
-    # Basic validation
     if not password:
         return jsonify({"error": "Password is required"}), 400
-
     if not prefix or not suffix:
         return jsonify({"error": "prefix and suffix are required for leak detection"}), 400
 
-    # Transform the password using the same TF-IDF vectorizer used during training
+    # FEATURE EXTRACTION
     password_tfidf = tfidf.transform([password])
 
-    # Predict the strength class (0: weak, 1: moderate, 2: strong)
+    # MODEL PREDICTION (CLASS & PROBABILITIES)
     prediction = model.predict(password_tfidf)[0]
-
-    # Predict class probabilities, e.g. [0.05, 0.10, 0.85]
     probabilities = model.predict_proba(password_tfidf)[0].tolist()
 
     #################################################################
     # Console logging for initial prediction
-    strength_names = {0: "Weak", 1: "Moderate", 2: "Strong"}
-    print(f"\n--- Password Strength Analysis ---")
-    print(
-        f"Initial Prediction: {strength_names.get(int(prediction), 'Unknown')} (Class {int(prediction)})")
-    print(
-        f"Probabilities: Weak={probabilities[0]:.2%}, Moderate={probabilities[1]:.2%}, Strong={probabilities[2]:.2%}")
+    # strength_names = {0: "Weak", 1: "Moderate", 2: "Strong"}
+    # print(f"\n--- Password Strength Analysis ---")
+    # print(
+    # f"Initial Prediction: {strength_names.get(int(prediction), 'Unknown')} (Class {int(prediction)})")
+    # print(
+    # f"Probabilities: Weak={probabilities[0]:.2%}, Moderate={probabilities[1]:.2%}, Strong={probabilities[2]:.2%}")
+    ################################################################
 
-    # Leak detection using HIBP
+    # LEAK DETECTION (HIBP API)
+    # SEND ONLY PREFIX FOR SECURITY
     response = requests.get(HIBP_URL + prefix)
     leaked = False
     leak_count = 0
 
     if response.status_code == 200:
         lines = response.text.splitlines()
-
         for line in lines:
             hash_suffix, count = line.split(":")
             if hash_suffix.strip().upper() == suffix.strip().upper():
@@ -76,9 +66,8 @@ def predict():
                 leak_count = int(count)
                 break
 
-    # Adjust strength based on leak severity
+    # ADJUST PASSWORD STRENGTH BASED ON LEAK ANALYSIS
     adjusted_strength = int(prediction)
-
     if leaked:
         if leak_count > 1_000_000:
             adjusted_strength = 0
@@ -89,18 +78,20 @@ def predict():
         else:
             adjusted_strength = max(0, adjusted_strength - 1)
 
-    # -
+    #############################################################################################################
     # Console logging for leak detection and adjusted strength
-    if leaked:
-        print(f"Leaked: Yes ({leak_count:,} occurrences)")
-        print(
-            f"Adjusted Strength: {strength_names.get(adjusted_strength, 'Unknown')} (Class {adjusted_strength})")
-    else:
-        print(f"Leaked: No")
-        print(
-            f"Adjusted Strength: {strength_names.get(adjusted_strength, 'Unknown')} (Class {adjusted_strength}) - No change")
-    print(f"-----------------------------------\n")
+    # if leaked:
+    #    print(f"Leaked: Yes ({leak_count:,} occurrences)")
+    #    print(
+    #        f"Adjusted Strength: {strength_names.get(adjusted_strength, 'Unknown')} (Class {adjusted_strength})")
+    # else:
+    #    print(f"Leaked: No")
+    #   print(
+    #        f"Adjusted Strength: {strength_names.get(adjusted_strength, 'Unknown')} (Class {adjusted_strength}) - No change")
+    # print(f"-----------------------------------\n")
+    ##############################################################################################################
 
+    # ENTROPY CALCULATION
     def password_entropy(password):
         charset = 0
         if any(c.islower() for c in password):
@@ -113,8 +104,10 @@ def predict():
             charset += 32
         if charset == 0:
             return 0
+        # H = L. LOG2(N)
         return round(len(password) * math.log2(charset), 2)
 
+    # GENERATE SUGGESTIONS
     def suggest_improvements(password, leaked, leak_count, entropy):
         suggestions = []
         if leaked:
@@ -135,12 +128,12 @@ def predict():
         if not suggestions:
             suggestions.append(
                 "This password looks strong. Consider using a password manager to generate unique ones.")
-        return suggestions[:3]
+        return suggestions[:3]      # RETURN TOP 3 SUGGESTIONS ONLY
 
     entropy = password_entropy(password)
     improvements = suggest_improvements(password, leaked, leak_count, entropy)
 
-    # Build the response
+    # BUILDING FINAL RESPONSE
     response = {
         "strength_class": adjusted_strength,
         "probabilities": probabilities,
@@ -153,5 +146,7 @@ def predict():
     return jsonify(response), 200
 
 
+# RUNNING THE FLASK APP
+# 0.0.0.0 ALLOWS ACCESS FOR ANY DEVICE (USED FOR TESTING)
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000)
