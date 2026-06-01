@@ -9,15 +9,10 @@ app = Flask(__name__)  # CREATE FLASK APP INSTANCE
 CORS(app)              # ALLOWS FRONTEND TO CALL API WITHOUT BROWSER BLOCKING
 
 # LOAD TRAINED MODEL + VECTORISER
-model = joblib.load("logistic_regression_model.pkl")
+model = joblib.load("best_logistic_regression_model.pkl")
 tfidf = joblib.load("tfidf_vectorizer.pkl")
 
 HIBP_URL = "https://api.pwnedpasswords.com/range/"      # HIBP API ENDPOINT
-
-# TEST ROUTE
-# @app.route("/", methods=["GET"])
-# def home():
-#     return jsonify({"message": "Password strength API is running"}), 200
 
 
 @app.route("/predict", methods=["POST"])
@@ -40,16 +35,6 @@ def predict():
     # MODEL PREDICTION (CLASS & PROBABILITIES)
     prediction = model.predict(password_tfidf)[0]
     probabilities = model.predict_proba(password_tfidf)[0].tolist()
-
-    #################################################################
-    # Console logging for initial prediction
-    # strength_names = {0: "Weak", 1: "Moderate", 2: "Strong"}
-    # print(f"\n--- Password Strength Analysis ---")
-    # print(
-    # f"Initial Prediction: {strength_names.get(int(prediction), 'Unknown')} (Class {int(prediction)})")
-    # print(
-    # f"Probabilities: Weak={probabilities[0]:.2%}, Moderate={probabilities[1]:.2%}, Strong={probabilities[2]:.2%}")
-    ################################################################
 
     # LEAK DETECTION (HIBP API)
     # SEND ONLY PREFIX FOR SECURITY
@@ -75,23 +60,9 @@ def predict():
             adjusted_strength = max(0, adjusted_strength - 2)
         elif leak_count > 100:
             adjusted_strength = max(0, adjusted_strength - 1)
-        else:
-            adjusted_strength = max(0, adjusted_strength - 1)
-
-    #############################################################################################################
-    # Console logging for leak detection and adjusted strength
-    # if leaked:
-    #    print(f"Leaked: Yes ({leak_count:,} occurrences)")
-    #    print(
-    #        f"Adjusted Strength: {strength_names.get(adjusted_strength, 'Unknown')} (Class {adjusted_strength})")
-    # else:
-    #    print(f"Leaked: No")
-    #   print(
-    #        f"Adjusted Strength: {strength_names.get(adjusted_strength, 'Unknown')} (Class {adjusted_strength}) - No change")
-    # print(f"-----------------------------------\n")
-    ##############################################################################################################
 
     # ENTROPY CALCULATION
+
     def password_entropy(password):
         charset = 0
         if any(c.islower() for c in password):
