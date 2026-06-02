@@ -15,6 +15,15 @@ tfidf = joblib.load("tfidf_vectorizer.pkl")
 HIBP_URL = "https://api.pwnedpasswords.com/range/"      # HIBP API ENDPOINT
 
 
+@app.route("/", methods=["GET"])
+def home():
+    return jsonify({
+        "status": "online",
+        "service": "AI-Based Secure Password Strength Evaluator and Leak Predictor",
+        "endpoint": "/predict"
+    }), 200
+
+
 @app.route("/predict", methods=["POST"])
 def predict():
 
